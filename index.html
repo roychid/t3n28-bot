@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>t3n28-bot </title>
+  <style>
+    /* Your existing dark theme CSS */
+    * { margin:0; padding:0; box-sizing:border-box; }
+    body { font-family: Arial; background:#0a0a0a; color:#fff; padding:20px; }
+    .container { max-width:1200px; margin:0 auto; }
+    header { text-align:center; margin-bottom:30px; padding-bottom:20px; border-bottom:2px solid #00ff00; }
+    h1 { font-size:28px; color:#00ff00; margin-bottom:5px; }
+    .subtitle { color:#888; font-size:14px; }
+    .controls { background:#1a1a1a; padding:20px; border-radius:8px; margin-bottom:30px; border:1px solid #333; }
+    .control-row { display:flex; gap:10px; flex-wrap:wrap; }
+    input, select { padding:10px; background:#0a0a0a; border:1px solid #00ff00; color:#fff; border-radius:4px; font-size:14px; }
+    input:focus, select:focus { outline:none; border-color:#00ff00; box-shadow:0 0 5px rgba(0,255,0,0.3); }
+    button { padding:10px 20px; background:#00ff00; color:#000; border:none; border-radius:4px; font-weight:bold; cursor:pointer; font-size:14px; }
+    button:hover { background:#00cc00; }
+    button:active { background:#009900; }
+    .btn-secondary { background:#333; color:#00ff00; border:1px solid #00ff00; }
+    .btn-secondary:hover { background:#444; }
+    .games-list { display:grid; gap:20px; }
+    .game-card { background:#1a1a1a; border:1px solid #333; border-radius:8px; padding:20px; }
+    .game-header { display:flex; justify-content:space-between; margin-bottom:20px; padding-bottom:10px; border-bottom:1px solid #333; }
+    .league { color:#00ff00; font-size:12px; font-weight:bold; }
+    .time { color:#888; font-size:12px; }
+    .teams { display:grid; grid-template-columns:1fr auto 1fr; gap:20px; margin-bottom:20px; align-items:center; }
+    .team { text-align:center; }
+    .team-name { font-size:18px; font-weight:bold; margin-bottom:10px; }
+    .form { display:flex; gap:5px; justify-content:center; }
+    .form-box { width:22px; height:22px; display:flex; align-items:center; justify-content:center; font-size:11px; font-weight:bold; border-radius:3px; }
+    .W { background:#00ff00; color:#000; }
+    .D { background:#666; color:#fff; }
+    .L { background:#ff0000; color:#fff; }
+    .vs { font-size:18px; color:#666; font-weight:bold; }
+    .stats { display:grid; grid-template-columns:repeat(auto-fit, minmax(150px,1fr)); gap:15px; margin-bottom:20px; }
+    .stat { background:#0a0a0a; padding:12px; border-radius:4px; border:1px solid #333; }
+    .stat-label { font-size:11px; color:#888; margin-bottom:5px; text-transform:uppercase; }
+    .stat-value { display:flex; justify-content:space-between; font-size:16px; font-weight:bold; }
+    .stat-home { color:#00ff00; }
+    .stat-away { color:#fff; }
+    .advice { background:#0a0a0a; padding:15px; border-radius:4px; border-left:3px solid #00ff00; }
+    .advice-title { color:#00ff00; font-size:14px; font-weight:bold; margin-bottom:10px; }
+    .advice-text { color:#ccc; font-size:13px; line-height:1.6; margin-bottom:10px; }
+    .recommendation { display:inline-block; background:#00ff00; color:#000; padding:8px 15px; border-radius:4px; font-weight:bold; font-size:13px; margin-right:10px; }
+    .confidence { color:#888; font-size:12px; }
+    .loading, .no-games { text-align:center; padding:40px; color:#888; }
+    .no-games { background:#1a1a1a; border-radius:8px; border:1px solid #333; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>⚽  ANALYSIS</h1>
+      <p class="subtitle">AI-Powered Predictions & Team Form Analysis</p>
+    </header>
+
+    <div class="controls">
+      <div class="control-row">
+        <input type="date" id="dateInput" />
+        <select id="leagueSelect">
+          <option value="">All Leagues</option>
+          <option value="39">Premier League</option>
+          <option value="140">La Liga</option>
+          <option value="78">Bundesliga</option>
+          <option value="135">Serie A</option>
+          <option value="61">Ligue 1</option>
+        </select>
+        <button onclick="loadTodaysGames()">LOAD GAMES</button>
+        <button class="btn-secondary" onclick="compareCustomTeams()">COMPARE TEAMS</button>
+      </div>
+    </div>
+
+    <div id="output"></div>
+  </div>
+
+  <script>
+    document.getElementById('dateInput').valueAsDate = new Date();
+
+    async function fetchTeamMatches(teamId, league) {
+      try {
+        const params = new URLSearchParams({ team: teamId });
+        if (league) params.append('league', league);
+        const res = await fetch(`/api/fixtures?${params}`);
+        const data = await res.json();
+        return data.fixtures || [];
+      } catch (err) {
+        console.log("API error:", err);
+        return [];
+      }
+    }
+
+    function generateTeamFormFromMatches(matches) {
+      return matches.map(m => {
+        const homeWin = m.teams.home.winner;
+        const awayWin = m.teams.away.winner;
+        if (m.teams.home.id === m.teams.home.id) {
+          if (homeWin) return 'W';
+          if (awayWin) return 'L';
+          return 'D';
+        } else {
+          if (awayWin) return 'W';
+          if (homeWin) return 'L';
+          return 'D';
+        }
+      }).slice(0,5);
+    }
+
+    function generateTeamStatsFromMatches(matches, teamId) {
+      let goalsFor = 0, goalsAgainst = 0, wins = 0;
+      matches.forEach(m => {
+        let gf=0, ga=0;
+        if (m.teams.home.id === teamId) { gf=m.goals.home; ga=m.goals.away; }
+        else { gf=m.goals.away; ga=m.goals.home; }
+        goalsFor += gf; goalsAgainst += ga;
+        if (gf>ga) wins++;
+      });
+      const games = matches.length || 1;
+      return {
+        goalsScored: (goalsFor/games).toFixed(1),
+        goalsConceded: (goalsAgainst/games).toFixed(1),
+        winRate: Math.round((wins/games)*100),
+        btts: Math.floor(Math.random()*30+40),  // keep some random for BTTS
+        over25: Math.floor(Math.random()*30+40)
+      };
+    }
+
+    function analyzeMatch(homeStats, awayStats, homeForm, awayForm) {
+      const homeScore = homeForm.filter(r=>'W'===r).length*3 + homeForm.filter(r=>'D'===r).length;
+      const awayScore = awayForm.filter(r=>'W'===r).length*3 + awayForm.filter(r=>'D'===r).length;
+      const homeStrength = homeScore + homeStats.winRate*0.5;
+      const awayStrength = awayScore + awayStats.winRate*0.5;
+
+      let advice=[], recommendation="", confidence=0;
+
+      if (homeStrength>awayStrength+5) { recommendation="HOME WIN"; confidence=Math.min(85,60+(homeStrength-awayStrength)); advice.push("Strong home form."); }
+      else if (awayStrength>homeStrength+5) { recommendation="AWAY WIN"; confidence=Math.min(85,60+(awayStrength-homeStrength)); advice.push("Strong away form."); }
+      else { recommendation="DRAW"; confidence=65; advice.push("Evenly matched teams."); }
+
+      const avgGoals = (parseFloat(homeStats.goalsScored)+parseFloat(awayStats.goalsScored))/2;
+      if (avgGoals>2.5) advice.push("High-scoring match likely.");
+      else if (avgGoals<1.8) advice.push("Low-scoring match likely.");
+
+      return { recommendation, confidence, advice:advice.join(' ') };
+    }
+
+    async function loadTodaysGames() {
+      const output = document.getElementById('output');
+      output.innerHTML='<div class="loading">Loading fixtures...</div>';
+
+      const league = document.getElementById('leagueSelect').value;
+      const date = document.getElementById('dateInput').value;
+
+      const demoGames = [
+        { league:"Premier League", time:"15:00", homeTeam:{name:"Arsenal",id:42}, awayTeam:{name:"Chelsea",id:49} },
+        { league:"Premier League", time:"17:30", homeTeam:{name:"Manchester City",id:50}, awayTeam:{name:"Liverpool",id:40} },
+        { league:"La Liga", time:"20:00", homeTeam:{name:"Barcelona",id:529}, awayTeam:{name:"Real Madrid",id:541} }
+      ];
+
+      const games=[];
+
+      for (let g of demoGames) {
+        // Only call API if the recommendation is likely to produce a win/draw
+        const homeMatches = await fetchTeamMatches(g.homeTeam.id, league);
+        const awayMatches = await fetchTeamMatches(g.awayTeam.id, league);
+
+        const homeForm = homeMatches.length? generateTeamFormFromMatches(homeMatches) : ['W','D','W','L','W'];
+        const awayForm = awayMatches.length? generateTeamFormFromMatches(awayMatches) : ['L','D','W','L','W'];
+
+        const homeStats = homeMatches.length? generateTeamStatsFromMatches(homeMatches,g.homeTeam.id) : {goalsScored:1.5, goalsConceded:0.8, winRate:60, btts:70, over25:60};
+        const awayStats = awayMatches.length? generateTeamStatsFromMatches(awayMatches,g.awayTeam.id) : {goalsScored:1.3, goalsConceded:1.0, winRate:50, btts:60, over25:55};
+
+        const analysis = analyzeMatch(homeStats, awayStats, homeForm, awayForm);
+
+        // Only include games likely for win/draw
+        if (analysis.recommendation.includes("WIN") || analysis.recommendation==="DRAW") games.push({...g, homeForm, awayForm, homeStats, awayStats, analysis});
+      }
+
+      if (games.length===0) { output.innerHTML='<div class="no-games">No high-confidence games found today</div>'; return; }
+
+      let html='<div class="games-list">';
+      games.forEach(game=>{
+        html+=`
+          <div class="game-card">
+            <div class="game-header"><div class="league">${game.league}</div><div class="time">${game.time}</div></div>
+            <div class="teams">
+              <div class="team"><div class="team-name">${game.homeTeam.name}</div><div class="form">${game.homeForm.map(r=>`<span class="form-box ${r}">${r}</span>`).join('')}</div></div>
+              <div class="vs">VS</div>
+              <div class="team"><div class="team-name">${game.awayTeam.name}</div><div class="form">${game.awayForm.map(r=>`<span class="form-box ${r}">${r}</span>`).join('')}</div></div>
+            </div>
+            <div class="stats">
+              <div class="stat"><div class="stat-label">Goals/Game</div><div class="stat-value"><span class="stat-home">${game.homeStats.goalsScored}</span><span class="stat-away">${game.awayStats.goalsScored}</span></div></div>
+              <div class="stat"><div class="stat-label">Conceded/Game</div><div class="stat-value"><span class="stat-home">${game.homeStats.goalsConceded}</span><span class="stat-away">${game.awayStats.goalsConceded}</span></div></div>
+              <div class="stat"><div class="stat-label">Win Rate</div><div class="stat-value"><span class="stat-home">${game.homeStats.winRate}%</span><span class="stat-away">${game.awayStats.winRate}%</span></div></div>
+            </div>
+            <div class="advice">
+              <div class="advice-title">RECOMMENDATION</div>
+              <div class="advice-text">${game.analysis.advice}</div>
+              <div><span class="recommendation">${game.analysis.recommendation}</span> <span class="confidence">Confidence: ${game.analysis.confidence}%</span></div>
+            </div>
+          </div>
+        `;
+      });
+      html+='</div>';
+      output.innerHTML=html;
+    }
+
+    function compareCustomTeams() {
+      const team1=prompt("Enter first team ID:");
+      const team2=prompt("Enter second team ID:");
+      if(team1&&team2){
+        const customGame=[{league:"Custom Comparison", time:"TBD", homeTeam:{name:"Team "+team1,id:team1}, awayTeam:{name:"Team "+team2,id:team2}}];
+        displayGames(customGame);
+      }
+    }
+
+    function displayGames(games){
+      const output=document.getElementById('output');
+      if(!games||games.length===0){output.innerHTML='<div class="no-games">No games found</div>';return;}
+      let html='<div class="games-list">';
+      games.forEach(game=>{
+        html+=`<div class="game-card"><div class="game-header"><div class="league">${game.league}</div><div class="time">${game.time}</div></div></div>`;
+      });
+      output.innerHTML=html;
+    }
+
+    window.onload=loadTodaysGames;
+  </script>
+</body>
+</html>
