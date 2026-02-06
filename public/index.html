@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>t3n28-bot — Football Predictor</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>⚽ t3n28-bot — Football Predictor</h1>
+  </header>
+
+  <div class="controls card">
+    <label>League</label>
+    <select id="league">
+      <option value="">All</option>
+      <optgroup label="Japan">
+        <option value="98">J1 League</option>
+        <option value="99">J2 League</option>
+      </optgroup>
+      <optgroup label="Australia">
+        <option value="3">A-League</option>
+      </optgroup>
+      <optgroup label="Brazil">
+        <option value="71">Serie A</option>
+      </optgroup>
+    </select>
+    <label>Season</label><input id="season" placeholder="e.g. 2025">
+    <label>Date</label><input id="date" type="date" value="">
+    <button id="loadBtn" class="btn">Load Matches</button>
+    <button id="exportBtn" class="btn secondary">Export Predictions</button>
+  </div>
+
+  <main id="mainArea" class="card">
+    <div id="placeholder" class="meta">Select league/date and click Load Matches.</div>
+  </main>
+</div>
+
+<script>
+const el=id=>document.getElementById(id);
+el('date').valueAsDate = new Date();
+
+let state={matches:[]};
+
+function setPlaceholder(txt){ el('placeholder').textContent=txt; }
+
+function renderMatches(){
+  const main=el('mainArea'); main.innerHTML='';
+  if(!state.matches.length){ setPlaceholder('No matches loaded'); return; }
+  for(const m of state.matches){
+    const card=document.createElement('section'); card.className='card game'; card.id='game-'+m.id;
+    const teams=document.createElement('div'); teams.className='teams';
+    teams.innerHTML=`<strong>${m.home_team}</strong> vs <strong>${m.away_team}</strong>`;
+    const dateDiv=document.createElement('div'); dateDiv.className='meta'; dateDiv.textContent=new Date(m.fixtureDate).toLocaleString();
+    const barWrap=document.createElement('div'); barWrap.className='prob-bar';
+    ['home','draw','away'].forEach(k=>{ const d=document.createElement('div'); d.className='prob-'+k; d.style.width='0%'; barWrap.appendChild(d); });
+    const rec=document.createElement('div'); rec.className='rec'; rec.textContent='-';
+    const conf=document.createElement('div'); conf.className='confidence'; conf.textContent='Confidence: -';
+    card.appendChild(teams); card.appendChild(dateDiv); card.appendChild(barWrap); card.appendChild(rec); card.appendChild(conf);
+    main.appendChild(card);
+    if(m.predictions) updateCard(m.id,m.predictions);
+  }
+}
+
+function updateCard(id,data){
+  const card=el('game-'+id);
+  if(!card||!data) return;
+  const ph=card.querySelector('.prob-home');
+  const pd=card.querySelector('.prob-draw');
+  const pa=card.querySelector('.prob-away');
+  ph.style.width=Math.round((data.probabilities.home||0)*100)+'%';
+  pd.style.width=Math.round((data.probabilities.draw||0)*100)+'%';
+  pa.style.width=Math.round((data.probabilities.away||0)*100)+'%';
+  card.querySelector('.rec').textContent='Recommendation: '+data.recommendation;
+  const c=Math.round(Math.max(data.probabilities.home,data.probabilities.draw,data.probabilities.away)*100);
+  card.querySelector('.confidence').textContent='Confidence: '+c+'%';
+}
+
+async function loadMatches(){
+  const league=el('league').value;
+  const season=el('season').value;
+  const date=el('date').value;
+  if(!date){ alert('Select a date'); return; }
+  setPlaceholder('Loading matches...');
+  try{
+    const res=await fetch('/api/fixtures',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({league,season,date})
+    });
+    const fixtures=await res.json();
+    if(!fixtures.length){ setPlaceholder('No fixtures for selected date'); return; }
+    state.matches=fixtures;
+    renderMatches();
+    for(const m of fixtures){
+      const predRes=await fetch('/api/predict',{
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({fixture:{home_team:m.home_team,away_team:m.away_team},options:{}})
+      });
+      const prediction=await predRes.json();
+      m.predictions=prediction;
+      updateCard(m.id,prediction);
+      await new Promise(r=>setTimeout(r,100)); // small delay
+    }
+  }catch(e){ console.error(e); setPlaceholder('Failed to load matches'); }
+}
+
+el('loadBtn').addEventListener('click',loadMatches);
+
+el('exportBtn').addEventListener('click',()=>{
+  const out=state.matches.map(m=>({id:m.id,home:m.home_team,away:m.away_team,fixtureDate:m.fixtureDate,predictions:m.predictions}));
+  const blob=new Blob([JSON.stringify(out,null,2)],{type:'application/json'});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a'); a.href=url; a.download='predictions.json'; a.click();
+  URL.revokeObjectURL(url);
+});
+</script>
+</body>
+</html>
